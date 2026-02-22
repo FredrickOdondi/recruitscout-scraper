@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RecruitScout - Job Scraper</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-size: 1.3rem;
+            color: #333;
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+
+        .website-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .website-checkbox {
+            display: flex;
+            align-items: center;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .website-checkbox:hover {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+
+        .website-checkbox input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            margin-right: 10px;
+            cursor: pointer;
+        }
+
+        .website-checkbox label {
+            cursor: pointer;
+            flex: 1;
+            user-select: none;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 12px 30px;
+            font-size: 1rem;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 600;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+
+        .btn-export {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-export:hover {
+            background: #218838;
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .results-info {
+            display: none;
+            padding: 15px;
+            background: #e8f5e9;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #4caf50;
+        }
+
+        .results-info.active {
+            display: block;
+        }
+
+        .table-container {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        thead {
+            background: #f8f9fa;
+        }
+
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        th {
+            font-weight: 600;
+            color: #333;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            letter-spacing: 0.5px;
+        }
+
+        tr:hover {
+            background: #f8f9ff;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .status-active {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .category-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            background: #e3f2fd;
+            color: #1565c0;
+        }
+
+        .error-message {
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #c62828;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        .empty-state svg {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
+
+        @media (max-width: 768px) {
+            header h1 {
+                font-size: 1.8rem;
+            }
+
+            .card {
+                padding: 20px;
+            }
+
+            .website-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>RecruitScout Job Scraper</h1>
+            <p>Scrape job listings from multiple job boards instantly</p>
+        </header>
+
+        <div class="card">
+            <h2 class="section-title">Select Websites to Scrape</h2>
+
+            <div class="website-grid">
+                {% for website in websites %}
+                <div class="website-checkbox">
+                    <input type="checkbox" id="{{ website.id }}" value="{{ website.id }}" checked>
+                    <label for="{{ website.id }}">{{ website.name }}</label>
+                </div>
+                {% endfor %}
+            </div>
+
+            <div class="button-group">
+                <button class="btn-primary" onclick="scrapeJobs()" id="scrapeBtn">
+                    Scrape Jobs
+                </button>
+                <button class="btn-secondary" onclick="selectAll()">
+                    Select All
+                </button>
+                <button class="btn-secondary" onclick="deselectAll()">
+                    Deselect All
+                </button>
+                <button class="btn-export" onclick="exportCSV()" id="exportBtn" disabled>
+                    Export as CSV
+                </button>
+            </div>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Scraping jobs... Please wait.</p>
+        </div>
+
+        <div class="results-info" id="resultsInfo"></div>
+
+        <div id="errorContainer"></div>
+
+        <div class="card" id="resultsCard" style="display: none;">
+            <h2 class="section-title">Scraped Jobs</h2>
+            <div class="table-container">
+                <table id="jobsTable">
+                    <thead>
+                        <tr>
+                            <th>Job Title</th>
+                            <th>Company</th>
+                            <th>Category</th>
+                            <th>Date Posted</th>
+                            <th>Status</th>
+                            <th>Website</th>
+                        </tr>
+                    </thead>
+                    <tbody id="jobsTableBody">
+                    </tbody>
+                </table>
+            </div>
+            <div class="empty-state" id="emptyState" style="display: none;">
+                <p>No jobs found. Try selecting different websites.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let scrapedJobs = [];
+
+        function getSelectedWebsites() {
+            const checkboxes = document.querySelectorAll('.website-checkbox input[type="checkbox"]');
+            return Array.from(checkboxes)
+                .filter(cb => cb.checked)
+                .map(cb => cb.value);
+        }
+
+        function selectAll() {
+            document.querySelectorAll('.website-checkbox input[type="checkbox"]').forEach(cb => {
+                cb.checked = true;
+            });
+        }
+
+        function deselectAll() {
+            document.querySelectorAll('.website-checkbox input[type="checkbox"]').forEach(cb => {
+                cb.checked = false;
+            });
+        }
+
+        async function scrapeJobs() {
+            const websites = getSelectedWebsites();
+
+            if (websites.length === 0) {
+                showError('Please select at least one website to scrape.');
+                return;
+            }
+
+            const loading = document.getElementById('loading');
+            const scrapeBtn = document.getElementById('scrapeBtn');
+            const resultsCard = document.getElementById('resultsCard');
+            const resultsInfo = document.getElementById('resultsInfo');
+            const errorContainer = document.getElementById('errorContainer');
+            const exportBtn = document.getElementById('exportBtn');
+
+            errorContainer.innerHTML = '';
+            loading.classList.add('active');
+            scrapeBtn.disabled = true;
+            resultsCard.style.display = 'none';
+            resultsInfo.classList.remove('active');
+
+            try {
+                const response = await fetch('/api/scrape', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ websites: websites })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    scrapedJobs = data.data;
+                    displayJobs(scrapedJobs);
+
+                    resultsInfo.innerHTML = `
+                        <strong>Success!</strong> Found ${data.count} job(s) from ${websites.length} website(s).
+                        Scraped at: ${new Date(data.scraped_at).toLocaleString()}
+                    `;
+                    resultsInfo.classList.add('active');
+                    exportBtn.disabled = false;
+                } else {
+                    showError('Failed to scrape jobs. Please try again.');
+                }
+            } catch (error) {
+                showError('Error: ' + error.message);
+            } finally {
+                loading.classList.remove('active');
+                scrapeBtn.disabled = false;
+            }
+        }
+
+        function displayJobs(jobs) {
+            const resultsCard = document.getElementById('resultsCard');
+            const tableBody = document.getElementById('jobsTableBody');
+            const emptyState = document.getElementById('emptyState');
+
+            console.log('displayJobs called with', jobs.length, 'jobs');
+
+            tableBody.innerHTML = '';
+
+            if (jobs.length === 0) {
+                emptyState.style.display = 'block';
+                document.getElementById('jobsTable').style.display = 'none';
+            } else {
+                emptyState.style.display = 'none';
+                document.getElementById('jobsTable').style.display = 'table';
+
+                jobs.forEach((job, index) => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${escapeHtml(job.job_title)}</td>
+                        <td>${escapeHtml(job.company || 'N/A')}</td>
+                        <td><span class="category-badge">${escapeHtml(job.category || 'Other')}</span></td>
+                        <td>${escapeHtml(job.date_posted)}</td>
+                        <td><span class="status-badge status-active">${escapeHtml(job.status)}</span></td>
+                        <td>${escapeHtml(job.website)}</td>
+                    `;
+                    tableBody.appendChild(row);
+                });
+
+                console.log('Added', tableBody.children.length, 'rows to table');
+            }
+
+            resultsCard.style.display = 'block';
+        }
+
+        function showError(message) {
+            const errorContainer = document.getElementById('errorContainer');
+            errorContainer.innerHTML = `<div class="error-message">${escapeHtml(message)}</div>`;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function exportCSV() {
+            try {
+                window.location.href = '/api/export/csv';
+            } catch (error) {
+                showError('Error exporting CSV: ' + error.message);
+            }
+        }
+    </script>
+</body>
+</html>
