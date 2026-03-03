@@ -324,6 +324,8 @@
                             <th>Date Posted</th>
                             <th>Status</th>
                             <th>Website</th>
+                            <th>Company Domain</th>
+                            <th>Leader LinkedIn</th>
                         </tr>
                     </thead>
                     <tbody id="jobsTableBody">
@@ -429,6 +431,8 @@
 
                 jobs.forEach((job, index) => {
                     const row = document.createElement('tr');
+                    const companyDomain = job.company_domain ? `<a href="${escapeHtml(job.company_domain)}" target="_blank" rel="noopener" style="color: #667eea; text-decoration: none;">${escapeHtml(job.company_domain)}</a>` : 'N/A';
+                    const linkedinLeader = job.linkedin_leader ? `<a href="${escapeHtml(job.linkedin_leader)}" target="_blank" rel="noopener" style="color: #0077b5; text-decoration: none;">LinkedIn Profile</a>` : 'N/A';
                     row.innerHTML = `
                         <td>${escapeHtml(job.job_title)}</td>
                         <td>${escapeHtml(job.company || 'N/A')}</td>
@@ -436,6 +440,8 @@
                         <td>${escapeHtml(job.date_posted)}</td>
                         <td><span class="status-badge status-active">${escapeHtml(job.status)}</span></td>
                         <td>${escapeHtml(job.website)}</td>
+                        <td>${companyDomain}</td>
+                        <td>${linkedinLeader}</td>
                     `;
                     tableBody.appendChild(row);
                 });

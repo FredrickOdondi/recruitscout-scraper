@@ -27,6 +27,8 @@ class JobData(BaseModel):
     date_posted: str
     status: str
     website: str
+    company_domain: str = ""
+    linkedin_leader: str = ""
 
 
 class ScrapingRequest(BaseModel):
