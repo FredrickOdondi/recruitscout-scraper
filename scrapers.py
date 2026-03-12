@@ -5,37 +5,40 @@ Web scrapers for various job boards.
 import asyncio
 import aiohttp
 from bs4 import BeautifulSoup
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Dict, Optional
 from playwright.async_api import async_playwright
 import re
-from serpapi import GoogleSearch
+# from simple_crawler import batch_crawl_company_domains
 
 
-def categorize_job(title: str) -> str:
-    """Determine job category based on title keywords."""
-    title_lower = title.lower()
+# Keywords to filter jobs in description
+FILTER_KEYWORDS = ["engineer", "developer", "software", "full stack", "frontend", "backend", "programmer", "coding",
+                    "data scientist", "data analyst", "analytics", "business intelligence", "machine learning", "ai",
+                    "product manager", "ux", "ui", "designer", "product owner", "product design",
+                    "devops", "sre", "site reliability", "infrastructure", "cloud", "kubernetes", "aws"]
 
-    categories = {
-        "Engineering/Software": ["engineer", "developer", "software", "full stack", "frontend", "backend", "programmer", "coding"],
-        "Data/Analytics": ["data scientist", "data analyst", "analytics", "business intelligence", "machine learning", "ai"],
-        "Product/Design": ["product manager", "ux", "ui", "designer", "product owner", "product design"],
-        "DevOps/Infrastructure": ["devops", "sre", "site reliability", "infrastructure", "cloud", "kubernetes", "aws"],
-        "Management/Leadership": ["manager", "director", "head of", "vp", "chief", "cto", "ceo", "lead"],
-        "Marketing/Sales": ["marketing", "sales", "growth", "seo", "content", "brand", "account manager"],
-        "HR/Recruiting": ["hr", "recruiter", "talent", "people", "hiring", "recruitment"],
-        "Finance/Accounting": ["finance", "accounting", "financial", "controller", "cfo", "analyst"],
-        "Customer Support": ["support", "customer success", "customer service", "help desk"],
-        "Operations": ["operations", "operational", "logistics", "supply chain"],
-        "Hospitality/Tourism": ["hotel", "restaurant", "chef", "receptionist", "waiter", "tourism", "travel"],
-        "Social/NGO": ["social", "ngo", "non-profit", "volunteer", "community", "charity"],
-    }
 
-    for category, keywords in categories.items():
-        if any(keyword in title_lower for keyword in keywords):
-            return category
+def filter_description(description: str) -> bool:
+    """Filter description for specific keywords."""
+    if not description:
+        return False
+    desc_lower = description.lower()
+    return any(keyword in desc_lower for keyword in FILTER_KEYWORDS)
 
-    return "Other"
+
+def extract_domain_from_url(url: str) -> str:
+    """Extract clean domain from URL."""
+    if not url:
+        return ""
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    if parsed.netloc:
+        domain = parsed.netloc
+        # Add scheme
+        scheme = parsed.scheme or "https"
+        return f"{scheme}://{domain}"
+    return ""
 
 
 def extract_company_from_text(full_text: str, title: str) -> str:
@@ -64,97 +67,133 @@ def extract_company_from_text(full_text: str, title: str) -> str:
 SERPAPI_KEY = "31baa192d94faa0fef6a1b05b0d4788e197e9b5d050a8b306596218f09270aa1"
 
 
-async def search_company_info(company_name: str) -> Dict[str, str]:
-    """Search for company domain and leader LinkedIn using SERPAPI."""
-    result = {"domain": "", "linkedin_leader": ""}
-
-    if not company_name or company_name == "Unknown":
-        return result
+async def scrape_arbeitnow(session, progress_callback=None) -> List[Dict]:
+    """Scrape jobs from Arbeitnow API with pagination."""
+    jobs = []
+    page = 1
 
     try:
-        # Search for company official website
-        params_domain = {
-            "engine": "google",
-            "q": f"{company_name} official website",
-            "api_key": SERPAPI_KEY,
-            "num": 5
-        }
+        while True:
+            url = f"https://www.arbeitnow.com/api/job-board-api?page={page}"
 
-        search_domain = GoogleSearch(params_domain)
-        results_domain = search_domain.get_dict()
+            if progress_callback:
+                progress_callback({
+                    "type": "progress",
+                    "message": f"Fetching Arbeitnow page {page}...",
+                    "page": page,
+                    "total": len(jobs)
+                })
 
-        # Extract domain from organic results
-        if "organic_results" in results_domain:
-            for res in results_domain["organic_results"][:3]:
-                link = res.get("link", "")
-                # Filter out common non-company domains
-                if link and not any(x in link for x in ["wikipedia", "linkedin", "indeed", "glassdoor", "facebook"]):
-                    # Extract domain from URL
-                    from urllib.parse import urlparse
-                    parsed = urlparse(link)
-                    domain = f"{parsed.scheme or 'https'}://{parsed.netloc}"
-                    result["domain"] = domain
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                if response.status == 429:
+                    # Rate limit hit - wait and retry
+                    if progress_callback:
+                        progress_callback({
+                            "type": "progress",
+                            "message": f"Rate limited! Waiting 5 seconds before retrying page {page}...",
+                            "page": page,
+                            "total": len(jobs)
+                        })
+                    await asyncio.sleep(5)
+                    # Retry the same page
+                    continue
+
+                if response.status != 200:
+                    if progress_callback:
+                        progress_callback({
+                            "type": "progress",
+                            "message": f"Error fetching page {page}: status {response.status}",
+                            "page": page,
+                            "total": len(jobs)
+                        })
                     break
 
-        # Search for company CEO/leader LinkedIn
-        leader_titles = ["CEO", "Chief Executive Officer", "Founder", "Owner", "Managing Director"]
-        for title in leader_titles:
-            params_linkedin = {
-                "engine": "google",
-                "q": f'"{company_name}" {title} LinkedIn',
-                "api_key": SERPAPI_KEY,
-                "num": 5
-            }
-
-            search_linkedin = GoogleSearch(params_linkedin)
-            results_linkedin = search_linkedin.get_dict()
-
-            if "organic_results" in results_linkedin:
-                for res in results_linkedin["organic_results"][:3]:
-                    link = res.get("link", "")
-                    if "linkedin.com/in/" in link:
-                        result["linkedin_leader"] = link
-                        break
-
-            if result["linkedin_leader"]:
-                break
-
-    except Exception as e:
-        print(f"Error searching company info for {company_name}: {e}")
-
-    return result
-
-
-async def scrape_arbeitnow(session) -> List[Dict]:
-    """Scrape jobs from Arbeitnow API."""
-    jobs = []
-    try:
-        url = "https://www.arbeitnow.com/api/job-board-api"
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
-            if response.status == 200:
                 data = await response.json()
-                for job in data.get("data", []):
+                page_jobs = data.get("data", [])
+
+                if not page_jobs:
+                    if progress_callback:
+                        progress_callback({
+                            "type": "progress",
+                            "message": f"No more jobs found. Finished at page {page-1}",
+                            "page": page-1,
+                            "total": len(jobs)
+                        })
+                    break
+
+                for job in page_jobs:
                     title = job.get("title", "N/A")
                     company = job.get("company_name") or job.get("company") or "Unknown"
+                    job_url = job.get("url", "") or ""
 
-                    # Extract company URL if available
-                    company_domain = job.get("company_url") or job.get("url") or ""
+                    # Parse description HTML to extract description
+                    description_html = job.get("description", "") or ""
+                    description = ""
+                    if description_html:
+                        soup = BeautifulSoup(description_html, 'html.parser')
+                        description = soup.get_text(strip=True, separator=' ')[:500]
 
+                    # Location
+                    location = job.get("location", "") or ""
+
+                    # Employment type
+                    job_type = ""
+                    if job.get("job_types"):
+                        job_type = ", ".join(job["job_types"]) if job["job_types"] else ""
+
+                    # Remote
+                    remote = "On-site"
+                    if job.get("remote"):
+                        remote = "Remote"
+                    if "hybrid" in description.lower():
+                        remote = "Hybrid"
+
+                    # Date posted
                     date_posted = "N/A"
                     if job.get("created_at"):
-                        date_posted = job["created_at"][:10]
+                        created_at = job["created_at"]
+                        if isinstance(created_at, int):
+                            date_posted = datetime.fromtimestamp(created_at).strftime("%Y-%m-%d")
 
                     jobs.append({
                         "job_title": title,
                         "company": company,
-                        "category": categorize_job(title),
+                        "company_domain": "",
+                        "location": location,
+                        "description": description,
+                        "job_url": job_url,
                         "date_posted": date_posted,
-                        "status": "Active",
-                        "website": "arbeitnow.com",
-                        "company_domain": company_domain
+                        "employment_type": job_type,
+                        "salary": "",
+                        "remote": remote,
+                        "status": "Active"
                     })
+
+                if progress_callback:
+                    progress_callback({
+                        "type": "progress",
+                        "message": f"Page {page}: {len(page_jobs)} jobs fetched",
+                        "page": page,
+                        "page_jobs": len(page_jobs),
+                        "total": len(jobs)
+                    })
+
+                # Check if there's a next page
+                links = data.get("links", {})
+                if not links.get("next"):
+                    break
+
+                # Add delay between requests to avoid rate limiting
+                await asyncio.sleep(2)
+
+                page += 1
+
     except Exception as e:
-        print(f"Error scraping Arbeitnow: {e}")
+        if progress_callback:
+            progress_callback({
+                "type": "error",
+                "message": f"Error scraping Arbeitnow: {e}"
+            })
 
     return jobs
 
@@ -173,35 +212,25 @@ async def scrape_berlin_startup_jobs(session) -> List[Dict]:
 
             soup = BeautifulSoup(await page.content(), 'lxml')
 
-            # Find job cards - they have class bjs-jlid__meta
             for div in soup.find_all('div', class_='bjs-jlid__meta'):
                 h4 = div.find('h4')
                 if h4:
                     title = h4.get_text(strip=True)
                     full_text = div.get_text(separator='|', strip=True)
                     company = extract_company_from_text(full_text, title)
-
-                    # Try to find company link - look for links in the job card
-                    company_domain = ""
-                    parent = div.find_parent('div', class_='bjs-jlid')
-                    if parent:
-                        # Look for company website link
-                        for a in parent.find_all('a', href=True):
-                            href = a['href']
-                            # Filter out job posting links and look for company websites
-                            if href.startswith('http') and 'berlinstartupjobs.com' not in href:
-                                # Clean up the URL
-                                company_domain = href.split('?')[0].rstrip('/')
-                                break
+                    job_url = ""
 
                     jobs.append({
                         "job_title": title,
                         "company": company,
-                        "category": categorize_job(title),
+                        "company_domain": "",
+                        "location": "Berlin",
+                        "description": title,
+                        "job_url": job_url,
                         "date_posted": datetime.now().strftime("%Y-%m-%d"),
-                        "status": "Active",
-                        "website": "berlinstartupjobs.com",
-                        "company_domain": company_domain
+                        "employment_type": "",
+                        "salary": "",
+                        "status": "Active"
                     })
 
                     if len(jobs) >= 50:
@@ -229,35 +258,28 @@ async def scrape_job4good(session) -> List[Dict]:
 
             soup = BeautifulSoup(await page.content(), 'lxml')
 
-            # Look for job listings - check various containers
             for item in soup.find_all(['div', 'article', 'li']):
-                # Find the title element
                 title_elem = item.find(['h2', 'h3', 'h4'])
                 if title_elem:
                     title = title_elem.get_text(strip=True)
                     if len(title) > 15:
                         skip = ['chi siamo', 'privacy', 'menu', 'candidati', 'aziende', 'accedi', 'home', 'info', 'servizi', 'risorse', 'formazione', 'contatti', 'job4good', 'annunci']
                         if not any(s in title.lower() for s in skip):
-                            # Get full text from container
                             full_text = item.get_text(separator='|', strip=True)
                             company = extract_company_from_text(full_text, title)
-
-                            # Try to find company link
-                            company_domain = ""
-                            for a in item.find_all('a', href=True):
-                                href = a['href']
-                                if href.startswith('http') and 'job4good.it' not in href:
-                                    company_domain = href.split('?')[0].rstrip('/')
-                                    break
+                            job_url = ""
 
                             jobs.append({
                                 "job_title": title,
                                 "company": company,
-                                "category": categorize_job(title),
+                                "company_domain": "",
+                                "location": "Italy",
+                                "description": title,
+                                "job_url": job_url,
                                 "date_posted": datetime.now().strftime("%Y-%m-%d"),
-                                "status": "Active",
-                                "website": "job4good.it",
-                                "company_domain": company_domain
+                                "employment_type": "",
+                                "salary": "",
+                                "status": "Active"
                             })
 
                             if len(jobs) >= 30:
@@ -285,7 +307,6 @@ async def scrape_turijobs(session) -> List[Dict]:
 
             soup = BeautifulSoup(await page.content(), 'lxml')
 
-            # Look for job listings
             for item in soup.find_all(['div', 'article', 'li']):
                 title_elem = item.find(['h2', 'h3', 'h4'])
                 if title_elem:
@@ -293,26 +314,21 @@ async def scrape_turijobs(session) -> List[Dict]:
                     if len(title) > 15:
                         skip = ['inicia', 'registra', 'blog', 'empleos', 'turijobs', 'ofertas', 'empresa']
                         if not any(s in title.lower() for s in skip):
-                            # Get full text from container
                             full_text = item.get_text(separator='|', strip=True)
                             company = extract_company_from_text(full_text, title)
-
-                            # Try to find company link
-                            company_domain = ""
-                            for a in item.find_all('a', href=True):
-                                href = a['href']
-                                if href.startswith('http') and 'turijobs.com' not in href:
-                                    company_domain = href.split('?')[0].rstrip('/')
-                                    break
+                            job_url = ""
 
                             jobs.append({
                                 "job_title": title,
                                 "company": company,
-                                "category": categorize_job(title),
+                                "company_domain": "",
+                                "location": "Spain",
+                                "description": title,
+                                "job_url": job_url,
                                 "date_posted": datetime.now().strftime("%Y-%m-%d"),
-                                "status": "Active",
-                                "website": "turijobs.com",
-                                "company_domain": company_domain
+                                "employment_type": "",
+                                "salary": "",
+                                "status": "Active"
                             })
 
                             if len(jobs) >= 30:
@@ -326,19 +342,31 @@ async def scrape_turijobs(session) -> List[Dict]:
     return jobs
 
 
-async def scrape_all_jobs(websites: Optional[List[str]] = None) -> List[Dict]:
-    """Scrape jobs from all specified websites."""
+async def scrape_all_jobs(websites: Optional[List[str]] = None, crawl_company_domains: bool = False, max_crawl: int = 20, progress_callback=None) -> List[Dict]:
+    """
+    Scrape jobs from all specified websites.
+
+    Args:
+        websites: List of website IDs to scrape
+        crawl_company_domains: Whether to crawl job pages for company domains
+        max_crawl: Maximum number of job pages to crawl
+        progress_callback: Optional callback function for progress updates
+    """
     all_jobs = []
 
     scrapers_map = {
         "arbeitnow": scrape_arbeitnow,
-        "berlinstartupjobs": scrape_berlin_startup_jobs,
-        "job4good": scrape_job4good,
-        "turijobs": scrape_turijobs
     }
 
     if websites is None or len(websites) == 0:
         websites = list(scrapers_map.keys())
+
+    if progress_callback:
+        progress_callback({
+            "type": "start",
+            "message": f"Starting to scrape {len(websites)} website(s)",
+            "websites": websites
+        })
 
     connector = aiohttp.TCPConnector(ssl=False)
 
@@ -347,7 +375,8 @@ async def scrape_all_jobs(websites: Optional[List[str]] = None) -> List[Dict]:
         for site_id in websites:
             if site_id in scrapers_map:
                 scraper_func = scrapers_map[site_id]
-                tasks.append(scraper_func(session))
+                # Pass progress callback to each scraper
+                tasks.append(scraper_func(session, progress_callback))
 
         if tasks:
             results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -358,30 +387,31 @@ async def scrape_all_jobs(websites: Optional[List[str]] = None) -> List[Dict]:
                 elif isinstance(result, Exception):
                     print(f"Scraper error: {result}")
 
-    # Remove duplicates based on job_title + company + website
+    # Remove duplicates
     seen = set()
     unique_jobs = []
     for job in all_jobs:
-        # Create a unique key
-        key = (job["job_title"].lower().strip(), job["company"].lower().strip(), job["website"])
+        key = (job["job_title"].lower().strip(), job["company"].lower().strip())
         if key not in seen:
             seen.add(key)
             unique_jobs.append(job)
 
-    # Search for company info (domain + LinkedIn leader) with caching
-    company_cache = {}
-    print(f"Searching for company info for {len(unique_jobs)} jobs...")
+    # Crawl company domains if requested
+    if crawl_company_domains:
+        # Collect job URLs to crawl
+        job_urls = [job["job_url"] for job in unique_jobs if job.get("job_url")]
 
-    for job in unique_jobs:
-        company = job.get("company", "")
-        if company and company != "Unknown":
-            if company not in company_cache:
-                company_cache[company] = await search_company_info(company)
-
-            job["company_domain"] = job.get("company_domain") or company_cache[company].get("domain", "")
-            job["linkedin_leader"] = company_cache[company].get("linkedin_leader", "")
+        if not job_urls:
+            print("No job URLs available for company domain crawling.")
         else:
-            job["company_domain"] = job.get("company_domain", "")
-            job["linkedin_leader"] = ""
+            print(f"Company domain crawling not available - simple_crawler module missing")
+            # print(f"Crawling {len(job_urls)} job pages for company domains...")
+            # domain_results = await batch_crawl_company_domains(job_urls, use_playwright=False)
+            #
+            # # Merge company domains back into jobs
+            # for job in unique_jobs:
+            #     job_url = job.get("job_url", "")
+            #     if job_url and job_url in domain_results:
+            #         job["company_domain"] = domain_results[job_url]
 
     return unique_jobs
